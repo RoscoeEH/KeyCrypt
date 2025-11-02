@@ -1,0 +1,21 @@
+use rand::rngs::OsRng;
+use rand::RngCore;
+use std::error::Error;
+use std::fs::File;
+use std::io::{self, Read};
+
+use crate::constants::*;
+
+// Returns 256 random bits
+pub fn get_message() -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut message = vec![0u8; MESSAGE_SIZE];
+    OsRng.try_fill_bytes(&mut message)?;
+    Ok(message)
+}
+
+fn get_key() -> io::Result<Vec<u8>> {
+    let mut file = File::open(HMAC_KEY_FILE)?;
+    let mut key = Vec::new();
+    file.read_to_end(&mut key)?;
+    Ok(key)
+}

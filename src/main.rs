@@ -1,5 +1,3 @@
-use std::error::Error;
-
 pub mod cli;
 pub mod client;
 pub mod constants;

@@ -6,10 +6,12 @@ edition = "2024"
 [dependencies]
 tokio = { version = "1.40", features = ["full"] }
 hmac = "0.12"
+argon2 = "0.5"
 sha2 = "0.10"
 rand = "0.8"
 rand_core = "0.6"
 clap = { version = "4.4", features = ["derive"] }
+chacha20poly1305 = "0.10"
 
 # for debugging
 hex = "0.4"

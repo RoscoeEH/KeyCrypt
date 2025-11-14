@@ -6,8 +6,6 @@ use chacha20poly1305::{
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
-use crate::utils::*;
-
 type HmacSha256 = Hmac<Sha256>;
 
 pub fn hmac_sign(

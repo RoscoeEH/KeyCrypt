@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 use crate::crypto::*;
 use crate::utils::*;
@@ -45,6 +45,37 @@ async fn process_message(
     Ok(result)
 }
 
+async fn challenge_response_loop(
+    mut socket: TcpStream,
+    key: &Arc<Vec<u8>>,
+    addr: String,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut counter: u32 = 0;
+    loop {
+        let mut buffer = [0; 1024];
+        match socket.read(&mut buffer).await {
+            Ok(n) if n > 0 => {
+                println!("Received: {}", counter);
+                match process_message(&buffer[..n], counter, &key).await {
+                    Ok(response) => {
+                        if let Err(e) = socket.write_all(&response).await {
+                            eprintln!("Failed to write response: {}", e);
+                        }
+                    }
+                    Err(e) => eprintln!("Failed to process message: {}", e),
+                }
+            }
+            Ok(_) => {
+                eprintln!("Connection closed by {}", addr);
+                break;
+            }
+            Err(e) => eprintln!("Failed to read from socket: {}", e),
+        }
+        counter += 1;
+    }
+    Ok(())
+}
+
 pub async fn start_server(
     ip_addr: String,
     key_path: String,
@@ -58,34 +89,14 @@ pub async fn start_server(
     println!("Server ready");
 
     loop {
-        let (mut socket, addr) = listener.accept().await?;
+        let (socket, addr) = listener.accept().await?;
         println!("New connection: {}", addr);
 
         let key_clone = Arc::clone(&key);
 
         tokio::spawn(async move {
-            let mut counter: u32 = 0;
-            loop {
-                let mut buffer = [0; 1024];
-                match socket.read(&mut buffer).await {
-                    Ok(n) if n > 0 => {
-                        println!("Received: {}", counter);
-                        match process_message(&buffer[..n], counter, &key_clone).await {
-                            Ok(response) => {
-                                if let Err(e) = socket.write_all(&response).await {
-                                    eprintln!("Failed to write response: {}", e);
-                                }
-                            }
-                            Err(e) => eprintln!("Failed to process message: {}", e),
-                        }
-                    }
-                    Ok(_) => {
-                        eprintln!("Connection closed by {}", addr);
-                        break;
-                    }
-                    Err(e) => eprintln!("Failed to read from socket: {}", e),
-                }
-                counter += 1;
+            if let Err(e) = challenge_response_loop(socket, &key_clone, addr.to_string()).await {
+                eprintln!("Error handling connection from {}: {}", addr, e);
             }
         });
     }

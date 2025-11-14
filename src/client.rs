@@ -64,26 +64,11 @@ fn verify_response(
     Ok(())
 }
 
-pub async fn start_client(
-    ip_addr: String,
-    key_path: String,
+async fn challenge_response_loop(
+    mut stream: TcpStream,
+    key: &Arc<Vec<u8>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let server_addr = ip_addr.as_str();
-
     let mut counter: u32 = 0;
-
-    let mut stream = match TcpStream::connect(server_addr).await {
-        Ok(stream) => stream,
-        Err(e) => {
-            eprintln!("Failed to connect to server: {}", e);
-            return Err(Box::new(e));
-        }
-    };
-    println!("Connected to server at {}", server_addr);
-
-    // Init key outside the loop, will replace with SEK derivation.
-    let key = Arc::new(get_psk(key_path)?);
-
     loop {
         let message = get_challenge(counter)?;
         if let Err(e) = stream.write_all(&message).await {
@@ -129,6 +114,28 @@ pub async fn start_client(
         counter += 1;
         sleep(Duration::from_millis(MESSAGE_DELAY)).await;
     }
+    Ok(())
+}
+
+pub async fn start_client(
+    ip_addr: String,
+    key_path: String,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let server_addr = ip_addr.as_str();
+
+    let stream = match TcpStream::connect(server_addr).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            eprintln!("Failed to connect to server: {}", e);
+            return Err(Box::new(e));
+        }
+    };
+    println!("Connected to server at {}", server_addr);
+
+    // Init key outside the loop, will replace with SEK derivation.
+    let key = Arc::new(get_psk(key_path)?);
+
+    challenge_response_loop(stream, &key).await?;
 
     println!("Closing connection...");
 

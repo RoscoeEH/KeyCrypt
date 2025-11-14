@@ -123,9 +123,9 @@ fn get_kek(salt: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sy
 }
 
 // Print function for debugging
-pub fn print_hex(data: &[u8]) {
+pub fn print_hex(data: &[u8]) -> String {
     let hex_string = encode(data);
-    println!("{}", hex_string);
+    hex_string
 }
 
 pub fn run_shutdown() -> std::io::Result<()> {

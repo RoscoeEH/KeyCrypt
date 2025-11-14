@@ -8,7 +8,7 @@ use crate::crypto::*;
 use crate::utils::*;
 
 fn get_challenge(counter: u32) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    // Magic (12 bytes) | message number (4 bytes) | message (32 bytes)
+    // Magic (3 bytes) | message number (4 bytes) | message (32 bytes)
 
     let mut challenge = Vec::<u8>::new();
     // Add magic bytes
@@ -64,6 +64,73 @@ fn verify_response(
     Ok(())
 }
 
+async fn key_agreement(
+    mut stream: TcpStream,
+    key_path: String,
+) -> Result<(TcpStream, Arc<Vec<u8>>), Box<dyn std::error::Error + Send + Sync>> {
+    // Generate random session key
+    let sek = get_random_bits()?;
+
+    // encrypt the session key
+    let psk = get_psk(key_path)?;
+    let nonce = get_nonce()?;
+    let protected_key = encrypt(&sek, &psk, &nonce)?;
+
+    // generate key agreement message
+    // format is: "KAC" (3 bytes) | protected key (48 bytes) | nonce (12 bytes) | key agreement challenge (32 bytes)
+    let mut message = Vec::<u8>::new();
+    message.extend_from_slice("KAC".as_bytes());
+    message.extend_from_slice(&protected_key);
+    message.extend_from_slice(&nonce);
+    let key_agreement_challenge = get_random_bits()?;
+    message.extend_from_slice(&key_agreement_challenge);
+
+    if let Err(e) = stream.write_all(&message).await {
+        eprintln!("Failed to write response: {}", e);
+    }
+    println!("Initiated key agreement");
+
+    // Check response
+    let mut response = vec![0; 1024];
+    let n = match timeout(
+        Duration::from_millis(TIMEOUT_WINDOW),
+        stream.read(&mut response),
+    )
+    .await
+    {
+        Ok(Ok(n)) => n,
+        Ok(Err(e)) => {
+            eprintln!("Error while reading response: {}", e);
+            return Err("Halted due to key agreement error".into());
+        }
+        Err(_) => {
+            return Err("Timeout while reading key agreement response".into());
+        }
+    };
+
+    if n > 0 {
+        println!("Received key agreement response");
+
+        // check magic
+        let magic = &response[..3];
+        if magic != "KAR".as_bytes() {
+            return Err("Bad key agreement magic.".into());
+        }
+
+        // check response was not altered
+        let response_challenge = &response[3..35];
+        if response_challenge != key_agreement_challenge {
+            return Err("Incorrect message recieved during key agreement.".into());
+        }
+
+        // verify signature
+        let key_agreement_sig = &response[35..67];
+        hmac_verify(response_challenge, &sek, key_agreement_sig)?;
+    }
+
+    Ok((stream, Arc::new(sek)))
+}
+
 async fn challenge_response_loop(
     mut stream: TcpStream,
     key: &Arc<Vec<u8>>,
@@ -81,7 +148,9 @@ async fn challenge_response_loop(
                 return Err(Box::new(e));
             }
         }
-        println!("Sent: {}", counter);
+        if cfg!(debug_assertions) {
+            println!("Sent challenge number: {}", counter);
+        }
 
         let mut buffer = vec![0; 1024];
         let n = match timeout(
@@ -101,10 +170,16 @@ async fn challenge_response_loop(
             }
         };
         if n > 0 {
-            println!("Received");
+            if cfg!(debug_assertions) {
+                println!("Received response");
+            }
 
             match verify_response(&buffer[..n], &message, counter, &key) {
-                Ok(()) => println!("Valid response."),
+                Ok(()) => {
+                    if cfg!(debug_assertions) {
+                        println!("Response validated");
+                    }
+                }
                 Err(_) => {
                     println!("Invalid response.");
                     break;
@@ -133,7 +208,7 @@ pub async fn start_client(
     println!("Connected to server at {}", server_addr);
 
     // Init key outside the loop, will replace with SEK derivation.
-    let key = Arc::new(get_psk(key_path)?);
+    let (stream, key) = key_agreement(stream, key_path).await?;
 
     challenge_response_loop(stream, &key).await?;
 

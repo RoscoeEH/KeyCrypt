@@ -45,6 +45,47 @@ async fn process_message(
     Ok(result)
 }
 
+async fn key_agreement(
+    mut socket: TcpStream,
+    psk: &[u8],
+) -> Result<(TcpStream, Arc<Vec<u8>>), Box<dyn std::error::Error + Send + Sync>> {
+    // Get initial message
+    let mut key_init_message = vec![0; 1024];
+    let n = match socket.read(&mut key_init_message).await {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("Error while message: {}", e);
+            return Err("Halted due to key agreement error".into());
+        }
+    };
+    let mut sek = Vec::<u8>::new();
+    if n > 0 {
+        println!("Recieved key agreement message");
+
+        // check magic
+        let magic = &key_init_message[..3];
+        if magic != "KAC".as_bytes() {
+            return Err("Bad key agreement magic.".into());
+        }
+        let encrypted_sek = &key_init_message[3..51];
+        let nonce = &key_init_message[51..63];
+        sek = decrypt(&encrypted_sek, &psk, &nonce)?;
+
+        // Send back response
+        let key_agreement_challenge = &key_init_message[63..95];
+        let sig = hmac_sign(&key_agreement_challenge, &sek)?;
+
+        let mut response = Vec::<u8>::new();
+        response.extend_from_slice("KAR".as_bytes());
+        response.extend_from_slice(&key_agreement_challenge);
+        response.extend_from_slice(&sig);
+
+        socket.write_all(&response).await?
+    }
+
+    Ok((socket, Arc::new(sek)))
+}
+
 async fn challenge_response_loop(
     mut socket: TcpStream,
     key: &Arc<Vec<u8>>,
@@ -55,7 +96,9 @@ async fn challenge_response_loop(
         let mut buffer = [0; 1024];
         match socket.read(&mut buffer).await {
             Ok(n) if n > 0 => {
-                println!("Received: {}", counter);
+                if cfg!(debug_assertions) {
+                    println!("Received challenge number: {}", counter);
+                }
                 match process_message(&buffer[..n], counter, &key).await {
                     Ok(response) => {
                         if let Err(e) = socket.write_all(&response).await {
@@ -63,6 +106,9 @@ async fn challenge_response_loop(
                         }
                     }
                     Err(e) => eprintln!("Failed to process message: {}", e),
+                }
+                if cfg!(debug_assertions) {
+                    println!("Sent response");
                 }
             }
             Ok(_) => {
@@ -83,14 +129,16 @@ pub async fn start_server(
     let listener = TcpListener::bind(ip_addr).await?;
     println!("Server running on localhost:8080");
 
-    // Init key outside the loop, will replace with SEK derivation.
-    let key = Arc::new(get_psk(key_path)?);
+    let psk = get_psk(key_path)?;
 
     println!("Server ready");
 
     loop {
         let (socket, addr) = listener.accept().await?;
         println!("New connection: {}", addr);
+
+        // Init key outside the loop, will replace with SEK derivation.
+        let (socket, key) = key_agreement(socket, &psk).await?;
 
         let key_clone = Arc::clone(&key);
 

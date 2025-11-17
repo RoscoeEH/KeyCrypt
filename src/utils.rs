@@ -1,6 +1,5 @@
 use hex::encode;
-use rand::RngCore;
-use rand::rngs::OsRng;
+use rand::Rng;
 use rpassword::read_password;
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -9,23 +8,23 @@ use std::process::Command;
 use crate::constants::*;
 use crate::crypto::*;
 
+pub fn random_bytes(len: usize) -> Vec<u8> {
+    let mut buf = vec![0u8; len];
+    rand::rng().fill(&mut buf[..]);
+    buf
+}
+
 // Returns 256 random bits
-pub fn get_random_bits() -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    let mut message = vec![0u8; MESSAGE_SIZE];
-    OsRng.try_fill_bytes(&mut message)?;
-    Ok(message)
+pub fn get_random_bits() -> Vec<u8> {
+    random_bytes(MESSAGE_SIZE)
 }
 
-pub fn get_nonce() -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    let mut nonce = vec![0u8; 12];
-    OsRng.try_fill_bytes(&mut nonce)?;
-    Ok(nonce)
+pub fn get_nonce() -> Vec<u8> {
+    random_bytes(12)
 }
 
-pub fn get_salt() -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    let mut salt = vec![0u8; 16];
-    OsRng.try_fill_bytes(&mut salt)?;
-    Ok(salt)
+pub fn get_salt() -> Vec<u8> {
+    random_bytes(16)
 }
 
 // Reads the preshared key file
@@ -65,9 +64,9 @@ fn encrypt_key_file(
     key_path: String,
     key_bytes: &[u8],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let salt = get_salt()?;
+    let salt = get_salt();
     let kek = get_kek(&salt)?;
-    let nonce = get_nonce()?;
+    let nonce = get_nonce();
     let ciphertext = encrypt(key_bytes, &kek, &nonce)?;
 
     // Built new key file
@@ -117,7 +116,7 @@ fn get_kek(salt: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sy
         false => read_password()?,
     };
 
-    let kek = derive_key(password, salt)?;
+    let kek = argon2_derive_key(password, salt)?;
 
     Ok(kek)
 }

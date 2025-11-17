@@ -4,6 +4,8 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit},
 };
 use hmac::{Hmac, Mac};
+use pqcrypto_mlkem::mlkem768::*;
+use pqcrypto_traits::kem::{Ciphertext, PublicKey, SecretKey, SharedSecret};
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -31,7 +33,7 @@ pub fn hmac_verify(
 }
 
 // Uses argon2 with m_cost 256*1024, t_cost 8, and p_cost 4. Outputs 256-bit key.
-pub fn derive_key(
+pub fn argon2_derive_key(
     password: String,
     salt: &[u8],
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
@@ -94,4 +96,33 @@ pub fn decrypt(
         .map_err(|e| format!("Decryption failed: {}", e))?;
 
     Ok(plaintext)
+}
+
+pub fn kem_key_gen() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
+    let (pk, sk) = keypair();
+
+    Ok((pk.as_bytes().to_vec(), sk.as_bytes().to_vec()))
+}
+
+pub fn key_encap(
+    encap_key_bytes: &[u8],
+) -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
+    let pk = PublicKey::from_bytes(encap_key_bytes).map_err(|_| "Invalid public key bytes")?;
+
+    let (ss, ct) = encapsulate(&pk);
+
+    Ok((ct.as_bytes().to_vec(), ss.as_bytes().to_vec()))
+}
+
+pub fn key_decap(
+    decap_key_bytes: &[u8],
+    ct_bytes: &[u8],
+) -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
+    let sk = SecretKey::from_bytes(decap_key_bytes).map_err(|_| "Invalid secret key bytes")?;
+
+    let ct = Ciphertext::from_bytes(ct_bytes).map_err(|_| "Invalid ciphertext bytes")?;
+
+    let ss = decapsulate(&ct, &sk);
+
+    Ok((ct_bytes.to_vec(), ss.as_bytes().to_vec()))
 }

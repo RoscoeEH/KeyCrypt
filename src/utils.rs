@@ -21,11 +21,11 @@ pub fn get_message() -> Vec<u8> {
 }
 
 pub fn get_nonce() -> Vec<u8> {
-    random_bytes(12)
+    random_bytes(NONCE_SIZE)
 }
 
 pub fn get_salt() -> Vec<u8> {
-    random_bytes(16)
+    random_bytes(SALT_SIZE)
 }
 
 // Reads the preshared key file

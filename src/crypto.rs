@@ -3,11 +3,15 @@ use chacha20poly1305::{
     ChaCha20Poly1305, Key, Nonce,
     aead::{Aead, KeyInit},
 };
+use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use pqcrypto_mlkem::mlkem768::*;
 use pqcrypto_traits::kem::{Ciphertext, PublicKey, SecretKey, SharedSecret};
 use sha2::Sha256;
+
 use std::error::Error;
+
+use crate::constants::*;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -34,16 +38,19 @@ pub fn hmac_verify(
 // --- Key Derivation ---
 
 // Uses argon2 with m_cost 256*1024, t_cost 8, and p_cost 4. Outputs 256-bit key.
-pub fn argon2_derive_key(
+fn argon2(
     password: String,
     salt: &[u8],
+    m_cost: u32,
+    t_cost: u32,
+    p_cost: u32,
 ) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-    let params = Params::new(256 * 1024, 8, 4, Some(32))
+    let params = Params::new(m_cost, t_cost, p_cost, Some(SYM_KEY_SIZE))
         .map_err(|e| format!("Invalid Argon2 parameters: {}", e))?;
 
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
 
-    let mut key = vec![0u8; 32];
+    let mut key = vec![0u8; SYM_KEY_SIZE];
     argon2
         .hash_password_into(password.as_bytes(), salt, &mut key)
         .map_err(|_e| "Argon2 hashing failed")?;
@@ -51,19 +58,42 @@ pub fn argon2_derive_key(
     Ok(key)
 }
 
+pub fn argon2_derive_key(
+    password: String,
+    salt: &[u8],
+) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+    argon2(password, salt, 256 * 1024, 8, 4)
+}
+
+// for verification of a user pin
+pub fn argon2_pin_hash(pin: String, salt: &[u8]) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+    argon2(pin, salt, 64, 2, 1)
+}
+
+pub fn hkdf_derive_key(
+    key_material: &[u8],
+    salt: &[u8],
+) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+    let hk = Hkdf::<Sha256>::new(Some(salt), key_material);
+    let mut key_vec = [0u8; SYM_KEY_SIZE];
+    hk.expand(&[], &mut key_vec)
+        .map_err(|_| "HKDF expand failed")?;
+
+    Ok(key_vec.to_vec())
+}
+
 // --- Symmetric encryption ---
 
 // ChaCha20Poly1305 encryption with a 256-bit key and 96-bit nonce
-#[allow(deprecated)] // from_slice is deprecated, look into update later
 pub fn encrypt(
     plaintext: &[u8],
     key: &[u8],
     nonce: &[u8],
 ) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-    if key.len() != 32 {
+    if key.len() != SYM_KEY_SIZE {
         return Err("Key must be 32 bytes".into());
     }
-    if nonce.len() != 12 {
+    if nonce.len() != NONCE_SIZE {
         return Err("Nonce must be 12 bytes".into());
     }
 
@@ -78,16 +108,15 @@ pub fn encrypt(
 }
 
 // ChaCha20Poly1305 decryption with a 256-bit key and 96-bit nonce
-#[allow(deprecated)] // from_slice is deprecated, look into update later
 pub fn decrypt(
     ciphertext: &[u8],
     key: &[u8],
     nonce: &[u8],
 ) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-    if key.len() != 32 {
+    if key.len() != SYM_KEY_SIZE {
         return Err("Key must be 256 bits".into());
     }
-    if nonce.len() != 12 {
+    if nonce.len() != NONCE_SIZE {
         return Err("Nonce must be 96 bits".into());
     }
 

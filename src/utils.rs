@@ -124,7 +124,7 @@ pub fn get_kek(salt: &[u8]) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
 }
 
 // Print function for debugging
-pub fn print_hex(data: &[u8]) -> String {
+pub fn get_hex_string(data: &[u8]) -> String {
     let hex_string = encode(data);
     hex_string
 }

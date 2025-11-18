@@ -4,6 +4,7 @@ pub mod cli;
 pub mod client;
 pub mod constants;
 pub mod crypto;
+pub mod key_management;
 pub mod server;
 pub mod utils;
 
@@ -22,6 +23,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 eprintln!("Client encountered an error: {}", e);
             }
             utils::run_shutdown()?;
+        }
+        cli::Command::KeyGen(args) => {
+            key_management::generate_user_keypair(args.decap_key_path, args.encap_key_path)?
         }
     }
 

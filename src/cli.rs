@@ -11,15 +11,34 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    Server(ClArgs),
-    Client(ClArgs),
+    Server(ServerArgs),
+    Client(ClientArgs),
+    KeyGen(KeyGenArgs),
 }
 
 #[derive(Args, Clone)]
-pub struct ClArgs {
+pub struct ServerArgs {
     #[arg(short = 'i', long = "ip", default_value_t = String::from(DEFAULT_IP_ADDRESS))]
     pub ip_addr: String,
 
-    #[arg(short = 'k', long = "key", default_value_t = String::from(DEFAULT_KEY_FILE))]
+    #[arg(short = 'k', long = "key", default_value_t = String::from(DEFAULT_PRIVATE_KEY_FILE))]
     pub key_path: String,
+}
+
+#[derive(Args, Clone)]
+pub struct ClientArgs {
+    #[arg(short = 'i', long = "ip", default_value_t = String::from(DEFAULT_IP_ADDRESS))]
+    pub ip_addr: String,
+
+    #[arg(short = 'k', long = "key", default_value_t = String::from(DEFAULT_PUBLIC_KEY_FILE))]
+    pub key_path: String,
+}
+
+#[derive(Args, Clone)]
+pub struct KeyGenArgs {
+    #[arg(short = 'd', long = "decap-key", default_value_t = String::from(DEFAULT_PRIVATE_KEY_FILE))]
+    pub decap_key_path: String,
+
+    #[arg(short = 'e', long = "encap-key", default_value_t = String::from(DEFAULT_PUBLIC_KEY_FILE))]
+    pub encap_key_path: String,
 }

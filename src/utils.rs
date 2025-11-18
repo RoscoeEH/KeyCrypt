@@ -2,8 +2,9 @@ use hex::encode;
 use rand::Rng;
 use rpassword::read_password;
 use std::error::Error;
-use std::fs::File;
+use std::fs::{File, create_dir_all};
 use std::io::{self, Read, Write};
+use std::path::PathBuf;
 use std::process::Command;
 
 use crate::constants::*;
@@ -106,7 +107,7 @@ fn decrypt_key_file(key_bytes: &[u8]) -> Result<Vec<u8>, Box<dyn Error + Send + 
 }
 
 // TODO read password twice on first entry to avoid the wrong password
-fn get_kek(salt: &[u8]) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+pub fn get_kek(salt: &[u8]) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
     println!("Enter password: ");
     // puts in a password automatically in dev mode for testing
     let password = match cfg!(debug_assertions) {
@@ -152,12 +153,26 @@ pub fn run_shutdown() -> std::io::Result<()> {
 
 pub fn overwrite_key_file(
     key_path: String,
-    encrypted_key: &[u8],
+    key_data: &[u8],
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut file = File::create(key_path)?;
+    let expanded = expand_tilde(&key_path);
 
-    file.write_all(encrypted_key)?;
-    file.flush()?; // ensure data is fully written
+    if let Some(parent) = expanded.parent() {
+        create_dir_all(parent)?;
+    }
+
+    let mut file = File::create(&expanded)?;
+    file.write_all(key_data)?;
+    file.flush()?;
 
     Ok(())
+}
+
+pub fn expand_tilde(path: &str) -> PathBuf {
+    if let Some(stripped) = path.strip_prefix("~/") {
+        if let Some(home) = dirs_next::home_dir() {
+            return home.join(stripped);
+        }
+    }
+    PathBuf::from(path)
 }

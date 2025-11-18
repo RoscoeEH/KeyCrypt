@@ -16,6 +16,7 @@ chacha20poly1305 = "0.10"
 rpassword = "7.3"
 pqcrypto-mlkem = "0.1.1"
 pqcrypto-traits = "0.3.5"
+dirs-next = "2"
 
 # for debugging
 hex = "0.4"

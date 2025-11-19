@@ -70,23 +70,24 @@ async fn key_agreement(
     mut stream: TcpStream,
     key_path: String,
 ) -> Result<(TcpStream, Arc<Vec<u8>>), Box<dyn Error + Send + Sync>> {
-    // Generate random session key
-    let sek = get_message();
+    // Read encap key and get shared secret
+    let ek = get_encap_key(key_path)?;
+    let (protected_ss, ss) = key_encap(&ek)?;
 
-    // encrypt the session key
-    let psk = get_encap_key(key_path)?;
-    let nonce = get_nonce();
-    let protected_key = encrypt(&sek, &psk, &nonce)?;
+    // Get sek from hkdf
+    let salt = get_salt();
+    let sek = hkdf_derive_key(&ss, &salt)?;
 
-    // generate key agreement message
-    // format is: "KAC" (3 bytes) | protected key (48 bytes) | nonce (12 bytes) | key agreement challenge (32 bytes)
+    // Generate key agreement message
+    // format is: "KAC" (3 bytes) | ss encrypted (1088 bytes) | salt (16 bytes) | message (32 bytes)
     let mut message = Vec::<u8>::new();
     message.extend_from_slice("KAC".as_bytes());
-    message.extend_from_slice(&protected_key);
-    message.extend_from_slice(&nonce);
+    message.extend_from_slice(&protected_ss);
+    message.extend_from_slice(&salt);
     let key_agreement_challenge = get_message();
     message.extend_from_slice(&key_agreement_challenge);
 
+    // Get response
     if let Err(e) = stream.write_all(&message).await {
         eprintln!("Failed to write response: {}", e);
     }
@@ -129,6 +130,8 @@ async fn key_agreement(
         let key_agreement_sig = &response[35..67];
         hmac_verify(response_challenge, &sek, key_agreement_sig)?;
     }
+
+    println!("Key agreement succeeded.");
 
     Ok((stream, Arc::new(sek)))
 }

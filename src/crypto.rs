@@ -151,12 +151,12 @@ pub fn key_encap(
 pub fn key_decap(
     decap_key_bytes: &[u8],
     ct_bytes: &[u8],
-) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error + Send + Sync>> {
+) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
     let sk = SecretKey::from_bytes(decap_key_bytes).map_err(|_| "Invalid secret key bytes")?;
 
     let ct = Ciphertext::from_bytes(ct_bytes).map_err(|_| "Invalid ciphertext bytes")?;
 
     let ss = decapsulate(&ct, &sk);
 
-    Ok((ct_bytes.to_vec(), ss.as_bytes().to_vec()))
+    Ok(ss.as_bytes().to_vec())
 }

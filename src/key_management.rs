@@ -58,8 +58,8 @@ fn get_kek(salt: &[u8]) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
     // puts in a password automatically in dev mode for testing
     let password = match cfg!(debug_assertions) {
         true => {
-            println!("[DEV MODE] Using default password");
-            String::from("password")
+            println!("[DEV MODE] Using dev kek");
+            return get_dev_kek();
         }
         false => read_password()?,
     };
@@ -71,7 +71,9 @@ fn get_kek(salt: &[u8]) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
 
 // Reads the preshared key file
 pub fn get_decap_key(key_path: String) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-    let mut file = File::open(&key_path)?;
+    let expanded = expand_tilde(&key_path);
+
+    let mut file = File::open(&expanded)?;
 
     let mut key_bytes = Vec::new();
     file.read_to_end(&mut key_bytes)?;
@@ -88,7 +90,9 @@ pub fn get_decap_key(key_path: String) -> Result<Vec<u8>, Box<dyn Error + Send +
 }
 
 pub fn get_encap_key(key_path: String) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-    let mut file = File::open(&key_path)?;
+    let expanded = expand_tilde(&key_path);
+
+    let mut file = File::open(&expanded)?;
 
     let mut key_bytes = Vec::new();
     file.read_to_end(&mut key_bytes)?;
@@ -102,4 +106,14 @@ pub fn get_encap_key(key_path: String) -> Result<Vec<u8>, Box<dyn Error + Send +
     };
 
     Ok(psk)
+}
+
+fn get_dev_kek() -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+    let expanded = expand_tilde("config/test_key.bin");
+    let mut file = File::open(&expanded)?;
+
+    let mut key_bytes = Vec::new();
+    file.read_to_end(&mut key_bytes)?;
+
+    Ok(key_bytes)
 }

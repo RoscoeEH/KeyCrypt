@@ -5,6 +5,8 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::crypto::*;
 use crate::key_management::*;
+
+#[allow(unused_imports)]
 use crate::utils::*;
 
 async fn process_message(
@@ -48,10 +50,10 @@ async fn process_message(
 
 async fn key_agreement(
     mut socket: TcpStream,
-    psk: &[u8],
+    dk: &[u8],
 ) -> Result<(TcpStream, Arc<Vec<u8>>), Box<dyn Error + Send + Sync>> {
     // Get initial message
-    let mut key_init_message = vec![0; 1024];
+    let mut key_init_message = vec![0; 2048];
     let n = match socket.read(&mut key_init_message).await {
         Ok(n) => n,
         Err(e) => {
@@ -68,12 +70,13 @@ async fn key_agreement(
         if magic != "KAC".as_bytes() {
             return Err("Bad key agreement magic.".into());
         }
-        let encrypted_sek = &key_init_message[3..51];
-        let nonce = &key_init_message[51..63];
-        sek = decrypt(&encrypted_sek, &psk, &nonce)?;
+        let protected_ss = &key_init_message[3..1091];
+        let ss = key_decap(dk, protected_ss)?;
+        let salt = &key_init_message[1091..1107];
+        sek = hkdf_derive_key(&ss, &salt)?;
 
         // Send back response
-        let key_agreement_challenge = &key_init_message[63..95];
+        let key_agreement_challenge = &key_init_message[1107..1139];
         let sig = hmac_sign(&key_agreement_challenge, &sek)?;
 
         let mut response = Vec::<u8>::new();
@@ -130,7 +133,7 @@ pub async fn start_server(
     let listener = TcpListener::bind(ip_addr).await?;
     println!("Server running on localhost:8080");
 
-    let psk = get_decap_key(key_path)?;
+    let dk = get_decap_key(key_path)?;
 
     println!("Server ready");
 
@@ -139,7 +142,7 @@ pub async fn start_server(
         println!("New connection: {}", addr);
 
         // Init key outside the loop, will replace with SEK derivation.
-        let (socket, key) = key_agreement(socket, &psk).await?;
+        let (socket, key) = key_agreement(socket, &dk).await?;
 
         let key_clone = Arc::clone(&key);
 

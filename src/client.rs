@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::{Duration, sleep, timeout};
@@ -9,8 +8,6 @@ use crate::constants::*;
 use crate::crypto::*;
 use crate::key_management::*;
 use crate::utils::*;
-
-static SK_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn get_challenge(counter: u32) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
     // Magic (3 bytes) | message number (4 bytes) | message (32 bytes)
@@ -77,9 +74,9 @@ async fn key_agreement(
     let ek = get_encap_key(key_path)?;
     let (protected_ss, ss) = key_encap(&ek)?;
 
-    // Get sek from hkdf
+    // Get sk from hkdf
     let salt = get_salt();
-    let sek = hkdf_derive_key(&ss, &salt, &SK_COUNTER)?;
+    let sk = hkdf_derive_key(&ss, &salt, 0)?;
 
     // Generate key agreement message
     // format is: "KAC" (3 bytes) | ss encrypted (1088 bytes) | salt (16 bytes) | message (32 bytes)
@@ -131,12 +128,12 @@ async fn key_agreement(
 
         // verify signature
         let key_agreement_sig = &response[35..67];
-        hmac_verify(response_challenge, &sek, key_agreement_sig)?;
+        hmac_verify(response_challenge, &sk, key_agreement_sig)?;
     }
 
     println!("Key agreement succeeded.");
 
-    Ok((stream, Arc::new(sek)))
+    Ok((stream, Arc::new(sk)))
 }
 
 async fn challenge_response_loop(
@@ -144,6 +141,7 @@ async fn challenge_response_loop(
     mut key: Arc<Vec<u8>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut counter: u32 = 0;
+    let mut sk_counter: u64 = 1;
     loop {
         let message = get_challenge(counter)?;
         if let Err(e) = stream.write_all(&message).await {
@@ -194,13 +192,13 @@ async fn challenge_response_loop(
                 }
             }
         }
-
         counter += 1;
-        // renew sek at limit
-        if counter >= SEK_USE_LIMIT {
+        // renew sk at limit
+        if counter >= SK_USE_LIMIT {
             // New salt is first 16 random bytes of last message
             let salt = &buffer[3..19];
-            key = renew_sek(key.as_slice(), &salt, &SK_COUNTER)?;
+            key = renew_sk(key.as_slice(), &salt, sk_counter)?;
+            sk_counter += 1;
             counter = 0;
         }
         sleep(Duration::from_millis(MESSAGE_DELAY)).await;
@@ -223,7 +221,7 @@ pub async fn start_client(
     };
     println!("Connected to server at {}", server_addr);
 
-    // Init key outside the loop, will replace with SEK derivation.
+    // Init key outside the loop, will replace with SK derivation.
     let (stream, key) = key_agreement(stream, key_path).await?;
 
     challenge_response_loop(stream, key).await?;

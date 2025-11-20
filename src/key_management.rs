@@ -3,7 +3,6 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 
 use crate::crypto::*;
 use crate::utils::*;
@@ -54,7 +53,6 @@ fn decrypt_key_file(key_bytes: &[u8]) -> Result<Vec<u8>, Box<dyn Error + Send + 
     Ok(plaintext_key)
 }
 
-// TODO read password twice on first entry to avoid the wrong password
 fn get_kek(salt: &[u8], new_password: bool) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
     // Uses default key for dev testing
     if cfg!(debug_assertions) {
@@ -125,14 +123,14 @@ pub fn get_encap_key(key_path: String) -> Result<Vec<u8>, Box<dyn Error + Send +
     Ok(psk)
 }
 
-pub fn renew_sek(
-    sek: &[u8],
+pub fn renew_sk(
+    sk: &[u8],
     salt: &[u8],
-    counter: &AtomicU64,
+    counter: u64,
 ) -> Result<Arc<Vec<u8>>, Box<dyn Error + Sync + Send>> {
     if cfg!(debug_assertions) {
         println!("Renewing session key");
     }
-    let new_sek = hkdf_derive_key(sek, salt, counter)?;
-    Ok(Arc::new(new_sek))
+    let new_sk = hkdf_derive_key(sk, salt, counter)?;
+    Ok(Arc::new(new_sk))
 }

@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -10,8 +9,6 @@ use crate::key_management::*;
 
 #[allow(unused_imports)] // get_hex_string is sometimes used in debugging
 use crate::utils::*;
-
-static SK_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 async fn process_message(
     message: &[u8],
@@ -66,8 +63,8 @@ async fn key_agreement(
         }
     };
 
-    // determine sek
-    let mut sek = Vec::<u8>::new();
+    // determine sk
+    let mut sk = Vec::<u8>::new();
     if n > 0 {
         println!("Recieved key agreement message");
 
@@ -79,11 +76,11 @@ async fn key_agreement(
         let protected_ss = &key_init_message[3..1091];
         let ss = key_decap(dk, protected_ss)?;
         let salt = &key_init_message[1091..1107];
-        sek = hkdf_derive_key(&ss, &salt, &SK_COUNTER)?;
+        sk = hkdf_derive_key(&ss, &salt, 0)?;
 
         // Send back response
         let key_agreement_challenge = &key_init_message[1107..1139];
-        let sig = hmac_sign(&key_agreement_challenge, &sek)?;
+        let sig = hmac_sign(&key_agreement_challenge, &sk)?;
 
         let mut response = Vec::<u8>::new();
         response.extend_from_slice("KAR".as_bytes());
@@ -93,7 +90,7 @@ async fn key_agreement(
         socket.write_all(&response).await?
     }
 
-    Ok((socket, Arc::new(sek)))
+    Ok((socket, Arc::new(sk)))
 }
 
 async fn challenge_response_loop(
@@ -102,6 +99,7 @@ async fn challenge_response_loop(
     addr: String,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut counter: u32 = 0;
+    let mut sk_counter: u64 = 1;
     loop {
         let mut buffer = [0; 1024];
         match socket.read(&mut buffer).await {
@@ -128,11 +126,12 @@ async fn challenge_response_loop(
             Err(e) => eprintln!("Failed to read from socket: {}", e),
         }
         counter += 1;
-        // renew sek at limit
-        if counter >= SEK_USE_LIMIT {
+        // renew sk at limit
+        if counter >= SK_USE_LIMIT {
             // New salt is first 16 random bytes of last message
             let salt = &buffer[3..19];
-            key = renew_sek(key.as_slice(), &salt, &SK_COUNTER)?;
+            key = renew_sk(key.as_slice(), &salt, sk_counter)?;
+            sk_counter += 1;
             counter = 0;
         }
     }
@@ -154,7 +153,7 @@ pub async fn start_server(
         let (socket, addr) = listener.accept().await?;
         println!("New connection: {}", addr);
 
-        // Init key outside the loop, will replace with SEK derivation.
+        // Init key outside the loop, will replace with SK derivation.
         let (socket, key) = key_agreement(socket, &dk).await?;
 
         let key_clone = Arc::clone(&key);

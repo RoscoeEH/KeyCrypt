@@ -10,7 +10,6 @@ use pqcrypto_traits::kem::{Ciphertext, PublicKey, SecretKey, SharedSecret};
 use sha2::Sha256;
 
 use std::error::Error;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::constants::*;
 
@@ -38,7 +37,6 @@ pub fn hmac_verify(
 
 // --- Key Derivation ---
 
-// Uses argon2 with m_cost 256*1024, t_cost 8, and p_cost 4. Outputs 256-bit key.
 fn argon2(
     password: String,
     salt: &[u8],
@@ -59,6 +57,7 @@ fn argon2(
     Ok(key)
 }
 
+// Uses argon2 with m_cost 256*1024, t_cost 8, and p_cost 4. Outputs 256-bit key.
 pub fn argon2_derive_key(
     password: String,
     salt: &[u8],
@@ -66,7 +65,7 @@ pub fn argon2_derive_key(
     argon2(password, salt, 256 * 1024, 8, 4)
 }
 
-// for verification of a user pin
+// for verification of a user pin, weaker parameters
 pub fn argon2_pin_hash(pin: String, salt: &[u8]) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
     argon2(pin, salt, 64, 2, 1)
 }
@@ -74,15 +73,12 @@ pub fn argon2_pin_hash(pin: String, salt: &[u8]) -> Result<Vec<u8>, Box<dyn Erro
 pub fn hkdf_derive_key(
     key_material: &[u8],
     salt: &[u8],
-    counter: &AtomicU64,
+    info: u64, // This represents an sk_counter
 ) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
     let hk = Hkdf::<Sha256>::new(Some(salt), key_material);
     let mut key_vec = [0u8; SYM_KEY_SIZE];
-    let info = counter
-        .fetch_add(1, Ordering::SeqCst)
-        .to_be_bytes()
-        .to_vec();
-    hk.expand(&info, &mut key_vec)
+
+    hk.expand(&info.to_ne_bytes().to_vec(), &mut key_vec)
         .map_err(|_| "HKDF expand failed")?;
 
     Ok(key_vec.to_vec())

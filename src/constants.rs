@@ -15,7 +15,14 @@ pub const NONCE_SIZE: usize = 12;
 
 pub const MESSAGE_DELAY: u64 = 500; // in milliseconds
 pub const TIMEOUT_WINDOW: u64 = 1000; // in milliseconds
-pub const SEK_USE_LIMIT: u32 = 2_u32.pow(24);
+pub const SK_USE_LIMIT: u32 = 2_u32.pow(24);
 
 pub const DISCONNECT_PROGRAM: &str = "systemctl";
 pub const DISCONNECT_ARG: &str = "poweroff";
+
+// Status codes
+pub const STATUS_INITIAL: u8 = 0;
+pub const STATUS_COMPUTED_KEY: u8 = 16;
+pub const STATUS_ARMED: u8 = 32;
+pub const STATUS_DISARMED: u8 = 128;
+pub const STATUS_SHUTDOWN: u8 = 224;

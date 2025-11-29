@@ -115,13 +115,18 @@ async fn challenge_response_loop(
                         eprintln!("Failed to write response: {}", e);
                     }
                 }
-                Err(e) => eprintln!("Failed to process message: {}", e),
+                Err(e) => {
+                    eprintln!("Failed to process message: {}", e);
+                    log_error(String::from(ERROR_LOG_PATH), &e)?;
+                }
             },
             Ok(_) => {
                 eprintln!("Connection closed by {}", addr);
                 break;
             }
-            Err(e) => eprintln!("Failed to read from socket: {}", e),
+            Err(e) => {
+                eprintln!("Failed to read from socket: {}", e);
+            }
         }
         counter += 1;
         // renew sk at limit

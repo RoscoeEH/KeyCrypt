@@ -35,7 +35,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             }
             result?;
         }
-
         Command::Client(args) => {
             // If the status is inactive it should retry connection at the same IP
             loop {

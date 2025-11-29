@@ -28,11 +28,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     match cli.command {
         Command::Server(args) => {
             let result = start_server(args.ip_addr, args.key_path, Arc::clone(&status)).await;
-            if let Err(_) = result {
+
+            if let Err(ref e) = result {
                 set_status(STATUS_ERROR, &status);
+                log_error(String::from(ERROR_LOG_PATH), e)?;
             }
             result?;
         }
+
         Command::Client(args) => {
             // If the status is inactive it should retry connection at the same IP
             loop {
@@ -40,6 +43,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                     start_client(&args.ip_addr.clone(), &args.key_path, Arc::clone(&status)).await
                 {
                     eprintln!("Client encountered an error: {}", e);
+                    log_error(String::from(ERROR_LOG_PATH), &e)?;
                 }
                 if get_status(&status) != STATUS_INACTIVE {
                     break;

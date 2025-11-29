@@ -11,6 +11,7 @@ rand_core = "0.9"
 clap = { version = "4.4", features = ["derive"] }
 rpassword = "7.3"
 dirs-next = "2"
+chrono = "0.4.42"
 
 # Crypto
 hmac = "0.12"

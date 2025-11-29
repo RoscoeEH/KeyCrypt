@@ -1,7 +1,8 @@
+use chrono::{DateTime, Utc};
 use hex::encode;
 use rand::Rng;
 use std::error::Error;
-use std::fs::{File, create_dir_all};
+use std::fs::{File, OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
@@ -69,6 +70,38 @@ pub fn overwrite_key_file(
 
     let mut file = File::create(&expanded)?;
     file.write_all(key_data)?;
+    file.flush()?;
+
+    Ok(())
+}
+
+pub fn log_error(
+    path: String,
+    err: &Box<dyn Error + Send + Sync>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let expanded = expand_tilde(&path);
+
+    if let Some(parent) = expanded.parent() {
+        create_dir_all(parent)?;
+    }
+
+    let now: DateTime<Utc> = Utc::now();
+    let timestamp = now.format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let mut msg = format!("[{}] {}\n", timestamp, err);
+
+    let mut current = err.source();
+    while let Some(source) = current {
+        msg.push_str(&format!("    caused by: {}\n", source));
+        current = source.source();
+    }
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&expanded)?;
+
+    file.write_all(msg.as_bytes())?;
     file.flush()?;
 
     Ok(())
